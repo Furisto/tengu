@@ -1,14 +1,12 @@
-use aya::{include_bytes_aligned, Bpf, Btf};
 use aya::programs::BtfTracePoint;
+use aya::{include_bytes_aligned, Bpf, Btf};
 use aya_log::BpfLogger;
 use clap::Parser;
 use log::{info, warn};
 use tokio::signal;
 
 #[derive(Debug, Parser)]
-struct Opt {
-    
-}
+struct Opt {}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
