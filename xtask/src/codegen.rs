@@ -2,7 +2,7 @@ use aya_tool::generate::InputFile;
 use std::{fs::File, io::Write, path::PathBuf};
 
 pub fn generate() -> Result<(), anyhow::Error> {
-    let dir = PathBuf::from("sangfroid-ebpf/src");
+    let dir = PathBuf::from("tengu-ebpf/src");
     let names: Vec<&str> = vec!["cred", "file"];
     let bindings = aya_tool::generate(
         InputFile::Btf(PathBuf::from("/sys/kernel/btf/vmlinux")),

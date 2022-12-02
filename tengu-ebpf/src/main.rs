@@ -12,7 +12,7 @@ use aya_bpf::{
 use aya_log_ebpf::info;
 mod vmlinux;
 
-use sangfroid_common::{CgroupData, BtfEvent, ProcessNamespaces, Process, BtfEventKind};
+use tengu_common::{CgroupData, BtfEvent, ProcessNamespaces, Process, BtfEventKind};
 use vmlinux::{cgroup, task_struct};
 
 #[map]

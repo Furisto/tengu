@@ -4,7 +4,7 @@ use aya::{include_bytes_aligned, Bpf, Btf};
 use aya_log::BpfLogger;
 use clap::Parser;
 use log::{info, warn};
-use sangfroid_common::{CgroupData, BtfEvent, Process, CgroupEvent, BtfEventKind};
+use tengu_common::{CgroupData, BtfEvent, Process, CgroupEvent, BtfEventKind};
 use tokio::{signal, task, sync::mpsc};
 use aya::maps::{HashMap as BpfHashMap, MapRefMut};
 use aya::maps::perf::AsyncPerfEventArray;
@@ -26,11 +26,11 @@ async fn main() -> Result<(), anyhow::Error> {
     // reach for `Bpf::load_file` instead.
     #[cfg(debug_assertions)]
     let mut bpf = Bpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/debug/sangfroid"
+        "../../target/bpfel-unknown-none/debug/tengu"
     ))?;
     #[cfg(not(debug_assertions))]
     let mut bpf = Bpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/release/sangfroid"
+        "../../target/bpfel-unknown-none/release/tengu"
     ))?;
     if let Err(e) = BpfLogger::init(&mut bpf) {
         // This can happen if you remove all log statements from your eBPF program.
@@ -76,9 +76,6 @@ async fn main() -> Result<(), anyhow::Error> {
                     }
                 }
             }
-
-
-           
         }
     });
 
@@ -101,7 +98,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
 
                 for id in results {
-                    tx.send(id).await.unwrap();
+                    //tx.send(id).await.unwrap();
                 }
             }
         });

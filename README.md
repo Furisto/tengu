@@ -1,4 +1,4 @@
-# sangfroid
+# karasu
 
 ## Prerequisites
 
@@ -24,5 +24,5 @@ cargo build
 ## Run
 
 ```bash
-cargo xtask run
+RUST_LOG=info cargo xtask run
 ```
