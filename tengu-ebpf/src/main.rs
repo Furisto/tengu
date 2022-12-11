@@ -4,22 +4,23 @@
 use core::slice;
 
 use aya_bpf::{
+    helpers::bpf_get_current_pid_tgid,
     macros::{btf_tracepoint, map, raw_tracepoint},
-    maps::{HashMap,PerfEventArray},
+    maps::{HashMap, PerfEventArray},
     programs::{BtfTracePointContext, RawTracePointContext},
-    BpfContext, helpers::{bpf_probe_read_kernel, bpf_get_current_pid_tgid},
+    BpfContext,
 };
 use aya_log_ebpf::info;
 mod vmlinux;
 
-use tengu_common::{CgroupData, BtfEvent, ProcessNamespaces, Process, BtfEventKind};
+use tengu_common::{BtfEvent, BtfEventKind, CgroupData, Process, ProcessNamespaces};
 use vmlinux::{cgroup, task_struct};
 
 #[map]
 pub static mut CGROUPS: HashMap<u64, CgroupData> = HashMap::with_max_entries(16384, 0);
 
 #[map]
-pub static mut EVENTS:PerfEventArray<BtfEvent> = PerfEventArray::with_max_entries(1024, 0);
+pub static mut EVENTS: PerfEventArray<BtfEvent> = PerfEventArray::with_max_entries(1024, 0);
 
 #[map]
 pub static mut PROCESSES: HashMap<u64, Process> = HashMap::with_max_entries(16384, 0);
@@ -75,9 +76,7 @@ pub fn sys_enter(ctx: RawTracePointContext) -> u32 {
 }
 
 unsafe fn try_sched_process_fork(ctx: BtfTracePointContext) -> Result<u32, u32> {
-    info!(
-        &ctx,
-        "tracepoint sched_process_exe called");
+    info!(&ctx, "tracepoint sched_process_exe called");
 
     let parent_task: *const task_struct = ctx.arg(0);
     let task: *const task_struct = ctx.arg(1);
@@ -94,7 +93,14 @@ unsafe fn try_sched_process_fork(ctx: BtfTracePointContext) -> Result<u32, u32> 
 
     let pid = u64::try_from(pid).map_err(|_| 5 as u32)?;
     PROCESSES.insert(&pid, &process, 0).map_err(|e| e as u32)?;
-    EVENTS.output(&ctx, &BtfEvent { key: pid, kind: BtfEventKind::Process }, 0);
+    EVENTS.output(
+        &ctx,
+        &BtfEvent {
+            key: pid,
+            kind: BtfEventKind::Process,
+        },
+        0,
+    );
 
     Ok(0)
 }
@@ -118,9 +124,18 @@ unsafe fn try_cgroup_mkdir(ctx: BtfTracePointContext) -> Result<u32, u32> {
     let cgrp: *const cgroup = ctx.arg(0);
     let cgrp_id = (*(*cgrp).kn).id;
 
-    CGROUPS.insert(&cgrp_id, &CgroupData { id: cgrp_id }, 0).map_err(|e| e as u32)?;
-    EVENTS.output(&ctx, &BtfEvent { key: cgrp_id, kind: BtfEventKind::Cgroup }, 0);
-   
+    CGROUPS
+        .insert(&cgrp_id, &CgroupData { id: cgrp_id }, 0)
+        .map_err(|e| e as u32)?;
+    EVENTS.output(
+        &ctx,
+        &BtfEvent {
+            key: cgrp_id,
+            kind: BtfEventKind::Cgroup,
+        },
+        0,
+    );
+
     Ok(0)
 }
 
@@ -140,13 +155,20 @@ unsafe fn try_cgroup_attach_task(ctx: BtfTracePointContext) -> Result<u32, u32> 
 
     let attached_task: *const task_struct = ctx.arg(2);
     let attached_pid = (*attached_task).pid;
-
     let attacher_pid = bpf_get_current_pid_tgid() >> 32;
 
-    info!(&ctx, "tracepoint cgroup attach task called with for cgroup {}, attached pid: {}, attacher: {}", cgrp_id, attached_pid, attacher_pid);
+    let hierarchy_id = (*(*cgrp).root).hierarchy_id;
+
+    info!(
+        &ctx,
+        "tracepoint cgroup attach task called with for cgroup {}, attached pid: {}, attacher: {}, hierarchy id: {}",
+        cgrp_id,
+        attached_pid,
+        attacher_pid,
+        hierarchy_id
+    );
     Ok(0)
 }
-
 
 unsafe fn try_sys_enter(ctx: RawTracePointContext) -> Result<u32, u32> {
     let args = slice::from_raw_parts(ctx.as_ptr() as *const usize, 2);

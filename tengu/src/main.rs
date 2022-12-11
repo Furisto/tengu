@@ -1,14 +1,14 @@
-use aya::programs::{BtfTracePoint, RawTracePoint};
+use aya::maps::perf::AsyncPerfEventArray;
+use aya::maps::{HashMap as BpfHashMap, MapRefMut};
+use aya::programs::BtfTracePoint;
 use aya::util::online_cpus;
 use aya::{include_bytes_aligned, Bpf, Btf};
 use aya_log::BpfLogger;
+use bytes::BytesMut;
 use clap::Parser;
 use log::{info, warn};
-use tengu_common::{CgroupData, BtfEvent, Process, CgroupEvent, BtfEventKind};
-use tokio::{signal, task, sync::mpsc};
-use aya::maps::{HashMap as BpfHashMap, MapRefMut};
-use aya::maps::perf::AsyncPerfEventArray;
-use bytes::BytesMut;
+use tengu_common::{BtfEvent, BtfEventKind, CgroupData, Process};
+use tokio::{signal, sync::mpsc, task};
 
 #[derive(Debug, Parser)]
 struct Opt {}
@@ -20,20 +20,17 @@ async fn main() -> Result<(), anyhow::Error> {
 
     env_logger::init();
 
-    // This will include your eBPF object file as raw bytes at compile-time and load it at
-    // runtime. This approach is recommended for most real-world use cases. If you would
-    // like to specify the eBPF program at runtime rather than at compile-time, you can
-    // reach for `Bpf::load_file` instead.
     #[cfg(debug_assertions)]
     let mut bpf = Bpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/debug/tengu"
     ))?;
+
     #[cfg(not(debug_assertions))]
     let mut bpf = Bpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/release/tengu"
     ))?;
+
     if let Err(e) = BpfLogger::init(&mut bpf) {
-        // This can happen if you remove all log statements from your eBPF program.
         warn!("failed to initialize eBPF logger: {}", e);
     }
 
@@ -50,12 +47,15 @@ async fn main() -> Result<(), anyhow::Error> {
     cgroup_rmdir.load("cgroup_rmdir", &btf)?;
     cgroup_rmdir.attach()?;
 
-    let cgroup_attach: &mut BtfTracePoint = bpf.program_mut("cgroup_attach_task").unwrap().try_into()?;
+    let cgroup_attach: &mut BtfTracePoint =
+        bpf.program_mut("cgroup_attach_task").unwrap().try_into()?;
     cgroup_attach.load("cgroup_attach_task", &btf)?;
     cgroup_attach.attach()?;
 
-    let cgroups:BpfHashMap<MapRefMut, u64, CgroupData> = BpfHashMap::try_from(bpf.map_mut("CGROUPS")?)?;
-    let processes:BpfHashMap<MapRefMut, u64, Process> = BpfHashMap::try_from(bpf.map_mut("PROCESSES")?)?;
+    let cgroups: BpfHashMap<MapRefMut, u64, CgroupData> =
+        BpfHashMap::try_from(bpf.map_mut("CGROUPS")?)?;
+    let processes: BpfHashMap<MapRefMut, u64, Process> =
+        BpfHashMap::try_from(bpf.map_mut("PROCESSES")?)?;
     let mut events = AsyncPerfEventArray::try_from(bpf.map_mut("EVENTS")?)?;
 
     let (tx, mut rx) = mpsc::channel::<BtfEvent>(100);
@@ -63,17 +63,12 @@ async fn main() -> Result<(), anyhow::Error> {
         while let Some(event) = rx.recv().await {
             match event.kind {
                 BtfEventKind::Cgroup => {
-                    if let Ok(cgrp) = cgroups.get(&event.key, 0) {
-                        println!("cgroup id is {}", cgrp.id);
-                    } else {
-                        println!("did not find cgroup data");
-                    }
+                    let cgroup_data = cgroups.get(&event.key, 0).unwrap();
+                    println!("Cgroup {} created", cgroup_data.id);
                 }
-
                 BtfEventKind::Process => {
-                    if let Ok(proc) = processes.get(&event.key, 0) {
-                        
-                    }
+                    let process = processes.get(&event.key, 0);
+                    println!("{:?}", process)
                 }
             }
         }
@@ -85,20 +80,20 @@ async fn main() -> Result<(), anyhow::Error> {
 
         task::spawn(async move {
             let mut buffers = (0..10)
-            .map(|_| BytesMut::with_capacity(1024))
-            .collect::<Vec<_>>();
+                .map(|_| BytesMut::with_capacity(1024))
+                .collect::<Vec<_>>();
 
             loop {
                 let events = event_array.read_events(&mut buffers).await.unwrap();
                 let mut results = vec![];
                 for b in buffers.iter_mut().take(events.read) {
                     let event_ptr = b.as_ptr() as *const BtfEvent;
-                    let event_data = unsafe { event_ptr.read_unaligned()};
+                    let event_data = unsafe { event_ptr.read_unaligned() };
                     results.push(event_data);
                 }
 
-                for id in results {
-                    //tx.send(id).await.unwrap();
+                for event in results {
+                    tx.send(event).await.unwrap();
                 }
             }
         });
